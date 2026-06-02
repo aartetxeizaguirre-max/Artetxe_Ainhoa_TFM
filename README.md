@@ -38,7 +38,7 @@ El directorio de trabajo está diseñado para asegurar la reproducibilidad metod
  ┃ ┃ ┗ 📜 somatic_interactions_primary.png
  ┃ ┃ ┗ 📜 Resumen_MAF_Primary_noFLAG.png
  ┃ ┣ 📂 metastatic                                    # Datos y visualizaciones: Cohorte Metastásica
- ┃ ┃ ┣ 📜 mutations_metastatic.tsv
+ ┃ ┃ ┣ 📜 mutations_metastatic.zip                    # Se sube comprimido por problemas de espacio
  ┃ ┃ ┣ 📜 oncoprint_metastatic.png
  ┃ ┃ ┗ 📜 somatic_interactions_metastatic.tsv
  ┃ ┃ ┗ 📜 somatic_interactions_metastatic.png
@@ -46,7 +46,7 @@ El directorio de trabajo está diseñado para asegurar la reproducibilidad metod
  ┃ ┣ 📂 all_samples                                   # Comparativas y análisis globales
  ┃ ┃ ┣ 📜 clinical_clean.tsv
  ┃ ┃ ┣ 📜 tmb_results.tsv
- ┃ ┃ ┣ 📜 TMB_primary_vs_metastatic.png
+ ┃ ┃ ┣ 📜 TMB_primary_vs_metastatic_clean.png
  ┃ ┃ ┣ 📜 fisher_primary_vs_metastatic.tsv
  ┃ ┃ ┣ 📜 forestPlot_primary_vs_metastatic.png
  ┃ ┃ ┣ 📜 cnv_focal_summary.tsv
