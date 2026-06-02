@@ -32,7 +32,7 @@ El directorio de trabajo está diseñado para asegurar la reproducibilidad metod
  ┃ ┗ 📜 Fase2_Análisis_Cuantitativo_Estadístico.Rmd   # Análisis de TMB, firmas y CNV
  ┣ 📂 output_skcm_tcga                                # Directorio principal autogenerado
  ┃ ┣ 📂 primary                                       # Datos y visualizaciones: Cohorte Primaria
- ┃ ┃ ┣ 📜 mutations_primary.tsv
+ ┃ ┃ ┣ 📜 mutations_primary.zip                       # Se sube comprimido por problemas de espacio
  ┃ ┃ ┣ 📜 oncoprint_primary.png
  ┃ ┃ ┗ 📜 somatic_interactions_primary.tsv
  ┃ ┃ ┗ 📜 somatic_interactions_primary.png
