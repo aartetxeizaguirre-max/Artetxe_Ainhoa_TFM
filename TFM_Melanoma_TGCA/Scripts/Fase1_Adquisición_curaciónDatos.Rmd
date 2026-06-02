@@ -1,0 +1,345 @@
+---
+title: "TratamientoDatos_skcm_tcga_pan_can_atlas_2018"
+author: "Ainhoa Artetxe Izaguirre"
+date: "2026-04-08"
+output: 
+  html_document:
+    toc: true       # añadimos un indice
+    toc_float: true # el índice te sigue al hacer scroll
+    theme: united
+---
+
+# Fase I – Paso 1: Adquisición y Curación de Datos
+
+## 1.1. Instalación y carga de librerías
+
+El primer paso para poder descargar los datos y tratarlos es la correcta instalación y carga de las librerías necesarias. En este caso las principales librerias y paquetes utilizados son los siguientes:
+
+1)  Gestión de paquetes BiocManager: sirve para instalar y mantener paquetes de Bioconductor, asegurando que uses versiones compatibles de R y del ecosistema Bioconductor.
+
+2)  Análisis genómico y oncológico maftools: se usa para leer, resumir, anotar y visualizar archivos MAF de variantes somáticas en cáncer.
+
+    1)  TCGAbiolinks: facilita la descarga de datos de TCGA/GDC, su preprocesamiento y análisis reproducibles dentro del flujo de Bioconductor.
+
+    2)  cBioPortalData: permite importar estudios de cBioPortal a objetos de Bioconductor, normalmente como MultiAssayExperiment, para integrarlos y analizarlos en R.
+
+3)  Tidy data y manipulación general tidyverse: es un metapaquete que agrupa herramientas para manipulación, limpieza, visualización y análisis de datos con una sintaxis coherente basada en “datos ordenados”.
+
+    1)  data.table: está orientado a manipulación rápida y eficiente de tablas grandes, con muy buen rendimiento en memoria y velocidad.
+
+    2)  readr: se usa para leer datos de texto, CSV y TSV de forma rápida y consistente, con tipos de datos más estables que las funciones base de R.
+
+4)  Infraestructura y analítica en la nube AnVIL: proporciona integración con la infraestructura de análisis del ecosistema AnVIL para trabajar con datos biomédicos en la nube y facilitar flujos reproducibles.
+
+A modo de resumen se adjunta la siguiente tabla:
+
+| Paquete | Tipo | Uso principal | Ventaja práctica |
+|-----------------|-----------------|------------------|---------------------|
+| BiocManager | Gestión de paquetes | Instalar y sincronizar paquetes Bioconductor | Evita incompatibilidades de versiones cran.r-project+1 |
+| maftools | Bioinformática / cáncer | Análisis de archivos MAF y mutaciones somáticas | Muy útil para oncología genómica rdocumentation |
+| TCGAbiolinks | Bioinformática / TCGA | Descargar y analizar datos de GDC/TCGA | Facilita flujos reproducibles rdrr+1 |
+| cBioPortalData | Bioinformática / cáncer | Importar estudios de cBioPortal a Bioconductor | Integra datos multiómicos github+1 |
+| tidyverse | Manipulación y visualización | Limpieza, transformación y gráficos de datos | Sintaxis clara y consistente |
+| data.table | Manipulación de datos | Trabajo rápido con tablas grandes | Muy eficiente en tiempo y memoria |
+| readr | Importación de datos | Leer CSV, TSV y archivos de texto | Importación estable y rápida |
+| AnVIL | Infraestructura / nube | Análisis biomédico reproducible en la nube | Escala y facilita colaboración |
+
+```{r librerias, message=FALSE, warning=FALSE}
+
+# Instalar BiocManager si no está disponible
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+
+# Instalar paquetes de Bioconductor necesarios
+bioc_pkgs <- c("maftools", "TCGAbiolinks")
+for (pkg in bioc_pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    BiocManager::install(pkg, ask = FALSE)
+  }
+}
+
+
+# Instalar paquetes de CRAN necesarios
+cran_pkgs <- c("cBioPortalData", "tidyverse", "data.table", "readr", "AnVIL")
+for (pkg in cran_pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+ 
+# Cargar librerías
+suppressPackageStartupMessages({
+  library(cBioPortalData)    # Interfaz API cBioPortal
+  library(maftools)          # Análisis de mutaciones MAF
+  library(tidyverse)         # Manipulación de datos
+  library(data.table)        # Lectura eficiente de ficheros
+  library(readr)             # Escritura de TSV/TXT
+})
+ 
+cat("Librerías cargadas correctamente\n")
+
+```
+
+## 1.2. CONFIGURACIÓN GENERAL
+
+```{r configuracion, message=FALSE, warning=FALSE}
+
+# ID del estudio en cBioPortal
+STUDY_ID <- "skcm_tcga_pan_can_atlas_2018"
+ 
+# Directorio raíz de salida
+setwd("C:/Users/lenovo/Desktop/BIOINFORMATICA/TFM")
+OUTPUT_DIR <- file.path(getwd(), "output_skcm_tcga")
+ 
+# Subdirectorios por tipo de muestra
+dirs <- list(
+  root      = OUTPUT_DIR,
+  primary   = file.path(OUTPUT_DIR, "primary"),
+  metastatic = file.path(OUTPUT_DIR, "metastatic"),
+  all       = file.path(OUTPUT_DIR, "all_samples")
+)
+ 
+# Crear directorios si no existen
+invisible(lapply(dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
+ 
+cat(sprintf("✓ Directorios de salida creados en: %s\n", OUTPUT_DIR))
+```
+
+## Conexión a cBioPortal y descarga de datos
+
+
+```{r descargaDatos, message=FALSE, warning=FALSE}
+
+cat("\n── Conectando con cBioPortal API... ──\n")
+ 
+# Inicializar conexión con la API pública de cBioPortal
+cbio <- cBioPortal()
+ 
+# Verificar que el estudio existe
+studies <- getStudies(cbio)
+if (!STUDY_ID %in% studies$studyId) {
+  stop(sprintf("El estudio '%s' no se encuentra en cBioPortal. Verifica el ID.", STUDY_ID))
+}
+cat(sprintf("✓ Estudio encontrado: %s\n", STUDY_ID))
+ 
+# Descargar el conjunto de datos completo (mutations, CNA, clinical)
+cat("\n── Descargando datos del estudio (puede tardar varios minutos)... ──\n")
+ 
+skcm_data <- cBioDataPack(
+  cancer_study_id    = STUDY_ID,
+  names      = c("mutations", "cna", "clinical"),
+  ask        = FALSE
+)
+ 
+cat("✓ Datos descargados correctamente\n")
+```
+
+# Fase I – Paso 2: Estandarización y Curación de Datos
+
+## 2.1 Extracción de datos clínicos y separación Primary vs Metastatic
+
+```{r Extraccion, message=FALSE, warning=FALSE}
+
+cat("\n── Extrayendo y curandando datos clínicos... ──\n")
+
+# Extraer datos clínicos del objeto MultiAssayExperiment
+clinical_raw <- colData(skcm_data) %>% as.data.frame()
+
+# Inspección inicial
+cat(sprintf("✓ Total de muestras en el estudio: %d\n", nrow(clinical_raw)))
+cat("Distribución por tipo de muestra:\n")
+print(table(clinical_raw$SAMPLE_TYPE, useNA = "ifany"))
+
+```
+## 2.2 Filtrado y limpieza de muestras
+
+```{r filtrado_limpieza, message=FALSE, warning=FALSE}
+
+# Estandarizar nombres de columnas clave
+clinical_clean <- clinical_raw %>%
+  rename_with(tolower) %>%                          # Minúsculas para consistencia
+  filter(!is.na(sample_type)) %>%                   # Eliminar muestras sin tipo
+  filter(sample_type %in% c("Primary",
+                             "Metastasis")) %>%      # Solo los dos grupos de interés
+  distinct(sample_id, .keep_all = TRUE)             # Eliminar duplicados por muestra
+
+cat(sprintf("✓ Muestras tras limpieza: %d\n", nrow(clinical_clean)))
+cat("Distribución final:\n")
+print(table(clinical_clean$sample_type))
+
+```
+
+## 2.3 Extracción y filtrado del MAF de mutaciones
+
+```{r filtrado_limpieza, message=FALSE, warning=FALSE}
+
+cat("\n── Procesando datos de mutaciones (MAF)... ──\n")
+
+# Extraer MAF correctamente desde el MultiAssayExperiment
+mutations_raw <- experiments(skcm_data)[["mutations"]] %>% 
+  as.data.frame()
+
+# El identificador de muestra en este objeto es 'group_name'
+# Retener solo muestras presentes en el clínico limpio
+valid_samples <- clinical_clean$sample_id
+
+mutations_filtered <- mutations_raw %>%
+  filter(group_name %in% valid_samples)
+
+cat(sprintf("✓ Mutaciones extraídas en total:     %d\n", nrow(mutations_raw)))
+cat(sprintf("✓ Mutaciones tras filtrado clínico:  %d\n", nrow(mutations_filtered)))
+
+```
+
+## 2.4 Separación en subcohortes y guardado
+
+```{r Separacion, message=FALSE, warning=FALSE}
+
+# IDs por grupo
+primary_ids    <- clinical_clean %>%
+  filter(sample_type == "Primary") %>% pull(sample_id)
+
+metastatic_ids <- clinical_clean %>%
+  filter(sample_type == "Metastasis") %>% pull(sample_id)
+
+# Separar MAF por grupo usando group_name
+maf_primary    <- mutations_filtered %>%
+  filter(group_name %in% primary_ids)        # ← group_name, NO Tumor_Sample_Barcode
+
+maf_metastatic <- mutations_filtered %>%
+  filter(group_name %in% metastatic_ids)     # ← group_name, NO Tumor_Sample_Barcode
+
+# Guardar archivos curados
+write_tsv(clinical_clean,  file.path(dirs$all,        "clinical_clean.tsv"))
+write_tsv(maf_primary,     file.path(dirs$primary,    "mutations_primary.tsv"))
+write_tsv(maf_metastatic,  file.path(dirs$metastatic, "mutations_metastatic.tsv"))
+
+cat(sprintf("✓ Primarios guardados:    %d muestras | %d mutaciones\n",
+            length(primary_ids), nrow(maf_primary)))
+cat(sprintf("✓ Metastásicos guardados: %d muestras | %d mutaciones\n",
+            length(metastatic_ids), nrow(maf_metastatic)))
+
+```
+
+## 2.5 Crear objetos MAF con maftools (para análisis posteriores)
+
+```{r ObjetosMAF, message=FALSE, warning=FALSE}
+
+flags_extendidos <- c("TTN", "MUC16", "OBSCN", "AHNAK2",
+                      "SYNE1", "FLG", "MUC5B", "DNAH17",
+                      "DNAH5", "DNAH7", "DNAH9",   # dineínas ciliares
+                      "LRP1B", "PCLO", "GPR98",    # genes muy largos
+                      "CSMD1", "CSMD2", "HYDIN",   # otros FLAGS frecuentes
+                      "FAT4", "DSCAM", "XIRP2")
+
+# Función de renombre
+renombrar_maf <- function(df) {
+  colnames(df)[colnames(df) == "group_name"] <- "Tumor_Sample_Barcode"
+  colnames(df)[colnames(df) == "seqnames"]   <- "Chromosome"
+  colnames(df)[colnames(df) == "start"]      <- "Start_Position"
+  colnames(df)[colnames(df) == "end"]        <- "End_Position"
+  return(df)
+}
+
+# Preparar MAF
+maf_primary_clean    <- renombrar_maf(as.data.frame(maf_primary))
+maf_metastatic_clean <- renombrar_maf(as.data.frame(maf_metastatic))
+
+# Preparar clínico — filtrar por sample_type directamente
+clinical_primary <- as.data.frame(clinical_clean)
+clinical_primary <- clinical_primary[clinical_primary$sample_type == "Primary", ]
+colnames(clinical_primary)[colnames(clinical_primary) == "sample_id"] <- "Tumor_Sample_Barcode"
+
+clinical_metastatic <- as.data.frame(clinical_clean)
+clinical_metastatic <- clinical_metastatic[clinical_metastatic$sample_type == "Metastasis", ]
+colnames(clinical_metastatic)[colnames(clinical_metastatic) == "sample_id"] <- "Tumor_Sample_Barcode"
+
+cat(sprintf("✓ Clinical primary:    %d filas\n", nrow(clinical_primary)))
+cat(sprintf("✓ Clinical metastatic: %d filas\n", nrow(clinical_metastatic)))
+
+# Crear objetos MAF
+maf_obj_primary <- read.maf(
+  maf          = maf_primary_clean,
+  clinicalData = clinical_primary,
+  verbose      = FALSE
+)
+
+maf_obj_metastatic <- read.maf(
+  maf          = maf_metastatic_clean,
+  clinicalData = clinical_metastatic,
+  verbose      = FALSE
+)
+
+cat("✓ Objetos MAF listos para análisis\n")
+
+plotmafSummary(maf_obj_primary,    rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+plotmafSummary(maf_obj_metastatic, rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+
+# Para guardar las imagenes obtenidas
+png("Resumen_MAF_Primary.png", width = 1200, height = 1000, res = 150)
+plotmafSummary(maf_obj_primary, rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+dev.off()
+
+png("Resumen_MAF_Metastatic.png", width = 1200, height = 1000, res = 150)
+plotmafSummary(maf_obj_metastatic, rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+dev.off()
+
+
+filtrar_flags <- function(maf_obj, flags) {
+  maf_filtrado <- subsetMaf(maf_obj, genes = setdiff(getGeneSummary(maf_obj)$Hugo_Symbol, flags))
+  return(maf_filtrado)
+}
+
+maf_obj_primary_noflag    <- filtrar_flags(maf_obj_primary,    flags_extendidos)
+maf_obj_metastatic_noflag <- filtrar_flags(maf_obj_metastatic, flags_extendidos)
+
+plotmafSummary(maf_obj_primary_noflag,    rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+plotmafSummary(maf_obj_metastatic_noflag, rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+
+png("Resumen_MAF_Primary_noFLAG.png", width = 1200, height = 1000, res = 150)
+plotmafSummary(maf_obj_primary_noflag, rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+dev.off()
+
+png("Resumen_MAF_Metastatic_noFLAG.png", width = 1200, height = 1000, res = 150)
+plotmafSummary(maf_obj_metastatic_noflag, rmOutlier=TRUE, addStat="median", dashboard=TRUE)
+dev.off()
+
+```
+
+
+# Fase I – Paso 3: Guardado de datos para siguientes pasos
+
+```{r filtrado_limpieza, message=FALSE, warning=FALSE}
+
+# Guardar objetos MAF
+saveRDS(maf_obj_primary,    file.path(dirs$root, "maf_obj_primary.rds"))
+saveRDS(maf_obj_metastatic, file.path(dirs$root, "maf_obj_metastatic.rds"))
+
+# Guardar también los IDs y el clínico, que usaré en el script 2
+saveRDS(primary_ids,    file.path(dirs$root, "primary_ids.rds"))
+saveRDS(metastatic_ids, file.path(dirs$root, "metastatic_ids.rds"))
+saveRDS(clinical_clean, file.path(dirs$root, "clinical_clean.rds"))
+
+cat("✓ Objetos guardados en:", dirs$root, "\n")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

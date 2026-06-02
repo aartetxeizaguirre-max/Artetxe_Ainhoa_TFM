@@ -1,0 +1,538 @@
+---
+title: "Untitled"
+author: "Ainhoa Artetxe Izaguirre"
+date: "2026-04-24"
+output: 
+  html_document:
+    toc: true       # añadimos un indice
+    toc_float: true # el índice te sigue al hacer scroll
+    theme: united
+---
+
+# Fase II: Análisis Cuantitativo y Estadístico
+
+## 1. Cálculo de TMB (Tumor Mutational Burden)
+
+```{r TMB, message=FALSE, warning=FALSE}
+setwd("C:/Users/lenovo/Desktop/BIOINFORMATICA/TFM/output_skcm_tcga")
+
+# maftools calcula TMB directamente sobre el objeto MAF
+# genome_size en Mb: WES estándar ≈ 38 Mb (TCGA usa ~38.36 Mb)
+GENOME_SIZE_MB <- 38
+
+tmb_primary <- tmb(
+  maf         = maf_obj_primary,
+  captureSize = GENOME_SIZE_MB,
+  logScale    = FALSE
+)
+tmb_primary$group <- "Primary"
+
+tmb_metastatic <- tmb(
+  maf         = maf_obj_metastatic,
+  captureSize = GENOME_SIZE_MB,
+  logScale    = FALSE
+)
+tmb_metastatic$group <- "Metastatic"
+
+# Unir y guardar
+tmb_all <- bind_rows(tmb_primary, tmb_metastatic)
+write_tsv(tmb_all, file.path(dirs$all, "tmb_results.tsv"))
+
+# ── Test estadístico: Wilcoxon rank-sum (Mann-Whitney U) ──
+wt <- wilcox.test(
+  total_perMB ~ group,
+  data        = tmb_all,
+  exact       = FALSE
+)
+
+cat(sprintf(
+  "TMB median Primary:    %.2f mut/Mb\n
+   TMB median Metastatic: %.2f mut/Mb\n
+   Wilcoxon p-value:      %.4f\n",
+  median(tmb_primary$total_perMB,    na.rm = TRUE),
+  median(tmb_metastatic$total_perMB, na.rm = TRUE),
+  wt$p.value
+))
+
+# ── Visualización: boxplot + puntos ──
+png(file.path(dirs$all, "TMB_primary_vs_metastatic.png"),
+    width = 900, height = 700, res = 150)
+
+p_label <- ifelse(wt$p.value < 0.001, "p < 0.001",
+                  sprintf("p = %.3f", wt$p.value))
+
+# Creamos el objeto del gráfico (p)
+p_tmb <- ggplot(tmb_all, aes(x = group, y = total_perMB, fill = group)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.5) +
+  geom_jitter(width = 0.15, size = 1.2, alpha = 0.4, color = "black") +
+  scale_fill_manual(values = c("Primary" = "#2196F3", "Metastatic" = "#E91E63")) +
+  labs(
+    title    = "Tumor Mutational Burden – SKCM TCGA",
+    subtitle = paste("Wilcoxon rank-sum:", p_label),
+    x        = "Tipo de muestra",
+    y        = "TMB (mutaciones/Mb)",
+    fill     = NULL
+  ) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "none") +
+  coord_cartesian(ylim = c(0, 100))
+
+dev.off()
+
+print(p_tmb)
+
+
+
+```
+
+
+```{r TMB2, message=FALSE, warning=FALSE}
+#------------------------------------------------------
+  # ONCOPLOT
+#------------------------------------------------------
+# Oncoplot excuyendo algunos de los genes
+flags_extendidos <- c("TTN", "MUC16", "OBSCN", "AHNAK2",
+                      "SYNE1", "FLG", "MUC5B", "DNAH17",
+                      "DNAH5", "DNAH7", "DNAH9",   # dineínas ciliares
+                      "LRP1B", "PCLO", "GPR98",    # genes muy largos
+                      "CSMD1", "CSMD2", "HYDIN",   # otros FLAGS frecuentes
+                      "FAT4", "DSCAM", "XIRP2")
+
+oncoplot(
+  maf           = maf_obj_primary,
+  top           = 20,
+  genesToIgnore = flags_extendidos
+)
+
+
+# Como los resultados obtenidos muestran muchos genes que son FLAGS
+# Drivers validados en melanoma (TCGA, Cancer Gene Census)
+melanoma_drivers <- c(
+  "BRAF", "NRAS", "NF1", "TP53", "CDKN2A",
+  "PTEN", "RAC1", "MAP2K1", "MAP2K2", "KIT",
+  "GNAQ", "GNA11", "CDK4", "CCND1", "MDM2",
+  "MITF", "APC", "CTNNB1", "PIK3CA", "RB1",
+  "PREX2", "RASA2", "PPP6C", "SNX31", "ARID2"
+)
+
+# Oncoplot de los datos de muestras primarias
+oncoplot(
+  maf           = maf_obj_primary,
+  genes         = melanoma_drivers,   # lista blanca en lugar de top = 20
+  genesToIgnore = flags_extendidos
+)
+
+# Guardar como PNG (imagen de alta resolución)
+png("oncoplot_melanoma_drivers_primary.png", width = 1000, height = 800, res = 150)
+oncoplot(
+  maf           = maf_obj_primary,
+  genes         = melanoma_drivers,
+  genesToIgnore = flags_extendidos
+)
+dev.off()
+
+# Oncoplot de los datos de muestras metastásicas
+oncoplot(
+  maf           = maf_obj_metastatic,
+  genes         = melanoma_drivers,   # lista blanca en lugar de top = 20
+  genesToIgnore = flags_extendidos
+)
+
+# Guardar como PNG (imagen de alta resolución)
+png("oncoplot_melanoma_drivers_metastatic.png", width = 1000, height = 800, res = 150)
+oncoplot(
+  maf           = maf_obj_metastatic,
+  genes         = melanoma_drivers,
+  genesToIgnore = flags_extendidos
+)
+dev.off()
+
+#------------------------------------------------------
+  # MAFCOMPARE
+#------------------------------------------------------
+# Crear el gráfico en mafCompare 
+skcm_compare <- mafCompare(
+  m1     = maf_obj_primary,
+  m2     = maf_obj_metastatic,
+  m1Name = "Primary",
+  m2Name = "Metastatic",
+  minMut = 5
+)
+
+# 2. Limpieza de datos: Filtramos FLAGS y nos quedamos SOLO con tus drivers de interés
+skcm_compare$results <- skcm_compare$results %>%
+  filter(!Hugo_Symbol %in% flags_extendidos) %>% # Quita genes ruidosos
+  filter(Hugo_Symbol %in% melanoma_drivers)     # Mantiene solo los biológicamente relevantes
+
+# 3. Guardar el Forest Plot final en un archivo
+pdf("forest_plot_melanoma_drivers.pdf", width = 8, height = 6)
+
+  forestPlot(
+    mafCompareRes = skcm_compare, 
+    pVal = 0.05,            # Solo muestra los significativos 
+    color = c('royalblue', 'maroon'), # Opcional: colores para Primario vs Metastásico
+    geneFontSize = 0.8          # Ajusta el tamaño del texto si es necesario
+  )
+
+dev.off()
+
+# 4. Mostrar en pantalla para verificar
+forestPlot(mafCompareRes = skcm_compare, pVal = 0.05)
+
+```
+
+
+## 2. Análisis de Mutaciones de Drivers y Paisaje Genómico
+
+DE ESTE TROZO COGER EL GRÁFICO DE LAS OD RATIOS
+
+```{r Paisaje_genomico, message=FALSE, warning=FALSE}
+
+melanoma_drivers <- c(
+  "BRAF", "NRAS", "NF1", "TP53", "CDKN2A",
+  "PTEN", "RAC1", "MAP2K1", "MAP2K2", "KIT",
+  "GNAQ", "GNA11", "CDK4", "CCND1", "MDM2",
+  "MITF", "APC", "CTNNB1", "PIK3CA", "RB1",
+  "PREX2", "RASA2", "PPP6C", "SNX31", "ARID2"
+)
+
+
+# 2A. Oncoplot con lista blanca de drivers
+png(file.path(dirs$primary, "oncoprint_primary.png"), width = 1400, height = 900, res = 150)
+oncoplot(maf = maf_obj_primary,    genes = melanoma_drivers)
+dev.off()
+
+png(file.path(dirs$metastatic, "oncoprint_metastatic.png"), width = 1400, height = 900, res = 150)
+oncoplot(maf = maf_obj_metastatic, genes = melanoma_drivers)
+dev.off()
+
+# 2B. mafCompare — no admite genes=, se filtra la tabla después
+skcm_compare <- mafCompare(
+  m1     = maf_obj_primary,
+  m2     = maf_obj_metastatic,
+  m1Name = "Primary",
+  m2Name = "Metastatic",
+  minMut = 5
+)
+
+# Filtrar resultados para quedarnos solo con drivers de melanoma
+skcm_compare$results <- skcm_compare$results %>%
+  filter(Hugo_Symbol %in% melanoma_drivers)
+
+print(skcm_compare$results)
+
+write_tsv(
+  as.data.frame(skcm_compare$results),
+  file.path(dirs$all, "fisher_primary_vs_metastatic.tsv")
+)
+
+# Para guardar la tabla en un archivo excel
+# Instalar
+install.packages("openxlsx")
+library(openxlsx)
+
+# Exportar de forma simple
+write.xlsx(skcm_compare$results, "C:/Users/lenovo/Desktop/BIOINFORMATICA/TFM/output_skcm_tcga/tablas/fisher_primary_vs_metastatic.xlsx")
+
+
+# 2C. somaticInteractions — usa genes= directamente
+png(file.path(dirs$primary, "somatic_interactions_primary.png"),
+    width = 1000, height = 900, res = 150)
+interact_primary <- somaticInteractions(
+  maf    = maf_obj_primary,
+  genes  = melanoma_drivers,
+  pvalue = c(0.05, 0.01)
+)
+dev.off()
+print(interact_primary)
+
+# Exportar de forma simple
+write.xlsx(interact_primary, "C:/Users/lenovo/Desktop/BIOINFORMATICA/TFM/output_skcm_tcga/tablas/somatic_interactions_primary.xlsx")
+
+
+png(file.path(dirs$metastatic, "somatic_interactions_metastatic.png"),
+    width = 1000, height = 900, res = 150)
+interact_metastatic <- somaticInteractions(
+  maf    = maf_obj_metastatic,
+  genes  = melanoma_drivers,
+  pvalue = c(0.05, 0.01)
+)
+dev.off()
+print(interact_metastatic)
+
+# Exportar de forma simple
+write.xlsx(interact_metastatic, "C:/Users/lenovo/Desktop/BIOINFORMATICA/TFM/output_skcm_tcga/tablas/somatic_interactions_metastatic.xlsx")
+
+cat("✓ Análisis de paisaje mutacional completado\n")
+
+
+## Para generar el ForestPlot
+# 1. Ajustar márgenes para que los nombres de los genes respiren
+par(mar = c(5, 5, 4, 2)) 
+
+# 2. Generar y mostrar el gráfico por pantalla
+forestPlot(
+  mafCompareRes = skcm_compare, 
+  pVal          = 0.05,            # Solo resalta los 3 significativos
+  color         = c("#2196F3", "#E91E63"), # Azul para Primary, Rosa para Metastatic
+  geneFontSize  = 0.9,             # Tamaño de letra legible
+  lineWidth     = 1.2              # Grosor de las líneas de los intervalos
+)
+
+# 3. Guardarlo en un archivo de alta calidad
+pdf("ForestPlot_Melanoma_Drivers.pdf", width = 8, height = 6)
+  forestPlot(
+    mafCompareRes = skcm_compare, 
+    pVal          = 0.05, 
+    color         = c("#2196F3", "#E91E63"),
+    geneFontSize  = 0.9
+  )
+dev.off()
+
+```
+DE ESTE APARTADO COGER TODO
+
+```{r Paisaje_genomico2, message=FALSE, warning=FALSE}
+melanoma_drivers <- c(
+  "BRAF", "NRAS", "NF1", "TP53", "CDKN2A",
+  "PTEN", "RAC1", "MAP2K1", "MAP2K2", "KIT",
+  "GNAQ", "GNA11", "CDK4", "CCND1", "MDM2",
+  "MITF", "APC", "CTNNB1", "PIK3CA", "RB1",
+  "PREX2", "RASA2", "PPP6C", "SNX31", "ARID2"
+)
+
+# 2A. Oncoplot con lista blanca de drivers
+png(file.path(dirs$primary, "oncoprint_primary.png"), width = 1400, height = 900, res = 150)
+oncoplot(maf = maf_obj_primary, genes = melanoma_drivers)
+dev.off()
+
+png(file.path(dirs$metastatic, "oncoprint_metastatic.png"), width = 1400, height = 900, res = 150)
+oncoplot(maf = maf_obj_metastatic, genes = melanoma_drivers)
+dev.off()
+
+# 2B. mafCompare
+skcm_compare <- mafCompare(
+  m1     = maf_obj_primary,
+  m2     = maf_obj_metastatic,
+  m1Name = "Primary",
+  m2Name = "Metastatic",
+  minMut = 5
+)
+
+skcm_compare$results <- skcm_compare$results %>%
+  filter(Hugo_Symbol %in% melanoma_drivers)
+
+# Guardar tabla Fisher
+write_tsv(
+  as.data.frame(skcm_compare$results),
+  file.path(dirs$all, "fisher_primary_vs_metastatic.tsv")
+)
+
+# 2C. somaticInteractions — guardar gráfico Y tabla de resultados
+si_primary <- somaticInteractions(         # ← asignar a variable para capturar la tabla
+  maf    = maf_obj_primary,
+  genes  = melanoma_drivers,
+  pvalue = c(0.05, 0.01)
+)
+png(file.path(dirs$primary, "somatic_interactions_primary.png"),
+    width = 1000, height = 900, res = 150)
+somaticInteractions(maf = maf_obj_primary, genes = melanoma_drivers, pvalue = c(0.05, 0.01))
+dev.off()
+
+# Guardar tabla de co-ocurrencia/exclusión mutua Primary
+write_tsv(
+  as.data.frame(si_primary),
+  file.path(dirs$primary, "somatic_interactions_primary.tsv")
+)
+
+si_metastatic <- somaticInteractions(
+  maf    = maf_obj_metastatic,
+  genes  = melanoma_drivers,
+  pvalue = c(0.05, 0.01)
+)
+png(file.path(dirs$metastatic, "somatic_interactions_metastatic.png"),
+    width = 1000, height = 900, res = 150)
+somaticInteractions(maf = maf_obj_metastatic, genes = melanoma_drivers, pvalue = c(0.05, 0.01))
+dev.off()
+
+# Guardar tabla de co-ocurrencia/exclusión mutua Metastatic
+write_tsv(
+  as.data.frame(si_metastatic),
+  file.path(dirs$metastatic, "somatic_interactions_metastatic.tsv")
+)
+
+# ForestPlot — guardar en PDF dentro del directorio de salida
+pdf(file.path(dirs$all, "ForestPlot_Melanoma_Drivers.pdf"), width = 8, height = 6)
+forestPlot(
+  mafCompareRes = skcm_compare,
+  pVal          = 0.05,
+  color         = c("#2196F3", "#E91E63"),
+  geneFontSize  = 0.9
+)
+dev.off()
+
+cat("✓ Análisis de paisaje mutacional completado\n")
+cat(sprintf("  · fisher_primary_vs_metastatic.tsv  → %s\n", dirs$all))
+cat(sprintf("  · somatic_interactions_primary.tsv  → %s\n", dirs$primary))
+cat(sprintf("  · somatic_interactions_metastatic.tsv → %s\n", dirs$metastatic))
+cat(sprintf("  · ForestPlot_Melanoma_Drivers.pdf   → %s\n", dirs$all))
+```
+
+
+
+## 3. Análisis de CNV (Copy Number Variations)
+
+```{r CNV, message=FALSE, warning=FALSE}
+
+# Los datos de CNA ya se descargaron en la Fase I dentro de skcm_data
+
+# 3A. Extraer matriz de CNA con genes correctamente asignados
+cna_exp    <- experiments(skcm_data)[["cna"]]
+cna_matrix <- assay(cna_exp, 1) %>% as.data.frame()
+
+# Verificar cuántos duplicados hay
+gene_symbols <- rowData(cna_exp)$Hugo_Symbol
+dupes <- gene_symbols[duplicated(gene_symbols)]
+cat(sprintf("⚠ Símbolos génicos duplicados: %d → %s\n",
+            length(dupes), paste(head(dupes, 10), collapse = ", ")))
+
+# Hacer únicos los rownames añadiendo sufijo numérico solo a los duplicados
+rownames(cna_matrix) <- make.unique(gene_symbols, sep = "_dup")
+
+cat(sprintf("✓ Dimensiones CNA matrix: %d genes × %d muestras\n",
+            nrow(cna_matrix), ncol(cna_matrix)))
+cat(sprintf("✓ Genes focales encontrados: %s\n",
+            paste(intersect(melanoma_drivers, rownames(cna_matrix)), collapse = ", ")))
+
+
+# 3B. Separar CNA por grupo usando los códigos estándar de TCGA
+# 1. Limpiar los nombres de las columnas por si acaso (quitar puntos/guiones extra)
+colnames(cna_matrix) <- gsub("\\.", "-", colnames(cna_matrix))
+
+# 2. Identificar el tipo de muestra usando el código de TCGA (posiciones 14 y 15)
+# '01' suele ser Tumor Primario, '06' es Metastásico
+sample_codes <- substr(colnames(cna_matrix), 14, 15)
+
+cna_primary    <- cna_matrix[, sample_codes == "01", drop = FALSE]
+cna_metastatic <- cna_matrix[, sample_codes == "06", drop = FALSE]
+
+# 3. Verificación en consola
+cat(sprintf("✓ Muestras Primarias (01) encontradas: %d\n", ncol(cna_primary)))
+cat(sprintf("✓ Muestras Metastásicas (06) encontradas: %d\n", ncol(cna_metastatic)))
+
+# 4. Actualizar las variables de ID para que el resto del código funcione
+primary_ids    <- colnames(cna_primary)
+metastatic_ids <- colnames(cna_metastatic)
+
+
+# 3C. Genes focales de interés en melanoma
+focal_genes <- c("BRAF", "CDKN2A", "PTEN", "NRAS", "MYC",
+                 "CCND1", "MDM2", "CDK4", "MITF", "KIT")
+
+# Extraer valores para genes focales (si están en la matriz)
+genes_present <- intersect(focal_genes, rownames(cna_matrix))
+
+cna_focal <- cna_matrix[genes_present, , drop = FALSE]
+
+# Tabla resumen: frecuencia de amplificación (valor = 2) y deleción (valor = -2) por gen
+summarize_cna <- function(mat, label) {
+  data.frame(
+    gene       = rownames(mat),
+    group      = label,
+    n_samples  = ncol(mat),
+    pct_amp    = rowMeans(mat == 2,  na.rm = TRUE) * 100,
+    pct_del    = rowMeans(mat == -2, na.rm = TRUE) * 100,
+    pct_gain   = rowMeans(mat == 1,  na.rm = TRUE) * 100,
+    pct_loss   = rowMeans(mat == -1, na.rm = TRUE) * 100
+  )
+}
+
+cna_summary <- bind_rows(
+  summarize_cna(cna_focal[ , colnames(cna_focal) %in% primary_ids   , drop=FALSE], "Primary"),
+  summarize_cna(cna_focal[ , colnames(cna_focal) %in% metastatic_ids, drop=FALSE], "Metastatic")
+)
+
+write_tsv(cna_summary, file.path(dirs$all, "cnv_focal_summary.tsv"))
+print(cna_summary)
+
+# 3D. Heatmap de CNV focal (requiere pheatmap)
+if (!requireNamespace("pheatmap", quietly = TRUE)) install.packages("pheatmap")
+library(pheatmap)
+
+# Preparar matrices para el heatmap
+mat_p <- cna_focal[ , colnames(cna_focal) %in% primary_ids   , drop = FALSE]
+mat_m <- cna_focal[ , colnames(cna_focal) %in% metastatic_ids, drop = FALSE]
+
+# Anotación de columnas
+anno_cols <- data.frame(
+  Group = c(rep("Primary", ncol(mat_p)), rep("Metastatic", ncol(mat_m))),
+  row.names = c(colnames(mat_p), colnames(mat_m))
+)
+
+mat_combined <- cbind(mat_p, mat_m)
+
+# Colores GISTIC: -2 azul oscuro, -1 azul, 0 blanco, 1 rosa, 2 rojo
+gistic_colors <- colorRampPalette(c("#1A237E","#42A5F5","#FFFFFF","#EF9A9A","#B71C1C"))(5)
+breaks_gistic  <- c(-2.5, -1.5, -0.5, 0.5, 1.5, 2.5)
+
+
+p <- pheatmap(
+  mat              = mat_combined,
+  color            = gistic_colors,
+  breaks           = breaks_gistic,
+  annotation_col   = anno_cols,
+  annotation_colors = list(Group = c(Primary = "#2196F3", Metastatic = "#E91E63")),
+  cluster_cols     = FALSE,
+  cluster_rows     = TRUE,
+  show_colnames    = FALSE,
+  fontsize_row     = 11,
+  main             = "CNV focal – Genes clave en melanoma (GISTIC discretizado)"
+)
+png(file.path(dirs$all, "cnv_focal_heatmap.png"),
+    width = 1400, height = 700, res = 150)
+print(p)
+dev.off()
+
+# 3E. Test de diferencia de frecuencia de amplificación/deleción por gen (Fisher exacto)
+fisher_cnv <- lapply(genes_present, function(g) {
+  amp_p  <- sum(cna_primary[g,    ] == 2,  na.rm = TRUE)
+  amp_m  <- sum(cna_metastatic[g, ] == 2,  na.rm = TRUE)
+  del_p  <- sum(cna_primary[g,    ] == -2, na.rm = TRUE)
+  del_m  <- sum(cna_metastatic[g, ] == -2, na.rm = TRUE)
+  n_p    <- ncol(cna_primary)
+  n_m    <- ncol(cna_metastatic)
+
+  # Fisher para amplificación
+  ft_amp <- fisher.test(matrix(c(amp_p, n_p - amp_p, amp_m, n_m - amp_m), 2, 2))
+  # Fisher para deleción
+  ft_del <- fisher.test(matrix(c(del_p, n_p - del_p, del_m, n_m - del_m), 2, 2))
+
+  data.frame(
+    gene       = g,
+    pval_amp   = ft_amp$p.value,
+    OR_amp     = ft_amp$estimate,
+    pval_del   = ft_del$p.value,
+    OR_del     = ft_del$estimate
+  )
+})
+
+cnv_fisher_results <- bind_rows(fisher_cnv) %>%
+  mutate(
+    padj_amp = p.adjust(pval_amp, method = "BH"),
+    padj_del = p.adjust(pval_del, method = "BH")
+  ) %>%
+  arrange(pval_amp)
+
+write_tsv(cnv_fisher_results, file.path(dirs$all, "cnv_fisher_focal_genes.tsv"))
+print(cnv_fisher_results)
+
+cat("✓ Análisis CNV completado\n")
+
+
+table(anno_cols$Group)
+
+```
+
+
+
+
