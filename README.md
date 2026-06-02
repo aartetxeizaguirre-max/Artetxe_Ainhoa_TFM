@@ -38,7 +38,10 @@ El directorio de trabajo está diseñado para asegurar la reproducibilidad metod
  ┃ ┃ ┗ 📜 somatic_interactions_primary.png
  ┃ ┃ ┗ 📜 Resumen_MAF_Primary_noFLAG.png
  ┃ ┣ 📂 metastatic                                    # Datos y visualizaciones: Cohorte Metastásica
- ┃ ┃ ┣ 📜 mutations_metastatic.zip                    # Se sube comprimido por problemas de espacio
+ ┃ ┃ ┣ 📜 mutations_metastatic.z01                    # Se sube comprimido y separado por problemas de espacio
+ ┃ ┃ ┣ 📜 mutations_metastatic.z02                    # Se sube comprimido y separado por problemas de espacio
+ ┃ ┃ ┣ 📜 mutations_metastatic.z03                    # Se sube comprimido y separado por problemas de espacio
+ ┃ ┃ ┣ 📜 mutations_metastatic.z04                    # Se sube comprimido y separado por problemas de espacio
  ┃ ┃ ┣ 📜 oncoprint_metastatic.png
  ┃ ┃ ┗ 📜 somatic_interactions_metastatic.tsv
  ┃ ┃ ┗ 📜 somatic_interactions_metastatic.png
